@@ -1,194 +1,130 @@
-/**
- * NEXUS CORE ARCHITECTURE
- * Implementa Patrón Singleton para el Audio, Patrón Observer para la comunicación de estado,
- * y Web Components nativos para el encapsulamiento visual.
- */
+// ==========================================
+// 1. MOTOR DE PARALLAX (Seguimiento de cabeza simulado)
+// ==========================================
+const scene = document.getElementById('hud-scene');
+
+document.addEventListener('mousemove', (e) => {
+    // Calcula la posición del ratón respecto al centro de la pantalla
+    const xAxis = (window.innerWidth / 2 - e.pageX) / 50;
+    const yAxis = (window.innerHeight / 2 - e.pageY) / 50;
+    
+    // Rota toda la escena sutilmente para dar sensación de profundidad
+    scene.style.transform = `rotateY(${xAxis}deg) rotateX(${yAxis}deg)`;
+});
+
+// Reloj Central
+setInterval(() => {
+    const now = new Date();
+    document.getElementById('clock').textContent = now.toLocaleTimeString('en-US', { hour12: false });
+}, 1000);
 
 // ==========================================
-// 1. EVENT BUS (Observer Pattern)
+// 2. WEB COMPONENTS (Widgets de Datos)
 // ==========================================
-class EventBus {
-    constructor() {
-        this.listeners = {};
+
+// --- WIDGET FINANCIERO (CoinGecko API) ---
+class NexusFinance extends HTMLElement {
+    async connectedCallback() {
+        this.innerHTML = `<div style="text-align:center; color: var(--hud-alert)">Estableciendo enlace de datos...</div>`;
+        this.fetchData();
+        // Actualizar cada 60 segundos
+        setInterval(() => this.fetchData(), 60000);
     }
-    on(event, callback) {
-        if (!this.listeners[event]) this.listeners[event] = [];
-        this.listeners[event].push(callback);
-    }
-    emit(event, data) {
-        if (this.listeners[event]) {
-            this.listeners[event].forEach(cb => cb(data));
+
+    async fetchData() {
+        try {
+            // API pública de criptomonedas
+            const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana,polkadot&vs_currencies=usd&include_24hr_change=true');
+            const data = await res.json();
+            this.render(data);
+        } catch (err) {
+            this.innerHTML = `<div class="negative">ERROR DE CONEXIÓN FINANCIERA</div>`;
         }
     }
-}
-const sysBus = new EventBus();
 
-// ==========================================
-// 2. AUDIO ENGINE (Singleton & Web Audio API)
-// ==========================================
-class AudioEngine {
-    constructor() {
-        if (AudioEngine.instance) return AudioEngine.instance;
-        this.ctx = null;
-        AudioEngine.instance = this;
-    }
-
-    init() {
-        if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-
-    playInteract() {
-        if (!this.ctx) return;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-        
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(800, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(1200, this.ctx.currentTime + 0.1);
-        
-        gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
-        
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.1);
-    }
-}
-const audioSys = new AudioEngine();
-
-// ==========================================
-// 3. WEB COMPONENTS (Modular UI)
-// ==========================================
-
-// A. Panel de Telemetría
-class NexusTelemetry extends HTMLElement {
-    constructor() {
-        super();
-        this.attachShadow({ mode: 'open' });
-        this.dataPoints = 0;
-    }
-
-    connectedCallback() {
-        this.render();
-        // Escucha eventos del sistema global
-        sysBus.on('scan-update', (data) => this.updateData(data));
-    }
-
-    updateData(data) {
-        this.dataPoints = data.val;
-        const display = this.shadowRoot.querySelector('.data-display');
-        if(display) display.textContent = `${this.dataPoints} T/s`;
-    }
-
-    render() {
-        this.shadowRoot.innerHTML = `
-            <style>
-                :host { display: block; background: rgba(20,22,28,0.7); padding: 1.5rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.08); }
-                h2 { color: #94a3b8; font-family: sans-serif; margin-top: 0; font-size: 1rem; text-transform: uppercase;}
-                .data-display { font-size: 3rem; color: #00f0ff; font-weight: bold; }
-            </style>
-            <h2>Flujo de Datos</h2>
-            <div class="data-display">0 T/s</div>
-        `;
-    }
-}
-customElements.define('nexus-telemetry-panel', NexusTelemetry);
-
-// B. Visualizador Radar (Canvas API)
-class NexusRadar extends HTMLElement {
-    constructor() {
-        super();
-        this.attachShadow({ mode: 'open' });
-        this.angle = 0;
-    }
-
-    connectedCallback() {
-        this.shadowRoot.innerHTML = `
-            <style>
-                :host { display: flex; justify-content: center; align-items: center; background: rgba(0,0,0,0.3); border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08); }
-                canvas { width: 100%; max-width: 300px; aspect-ratio: 1; }
-            </style>
-            <canvas id="radarCanvas" width="300" height="300"></canvas>
-        `;
-        this.ctx = this.shadowRoot.getElementById('radarCanvas').getContext('2d');
-        this.animate = this.animate.bind(this);
-        requestAnimationFrame(this.animate);
-    }
-
-    animate() {
-        const width = 300; const height = 300; const center = width/2;
-        
-        // Efecto de desvanecimiento (trail)
-        this.ctx.fillStyle = 'rgba(10, 10, 12, 0.1)';
-        this.ctx.fillRect(0, 0, width, height);
-        
-        // Círculos del radar
-        this.ctx.strokeStyle = 'rgba(0, 240, 255, 0.3)';
-        this.ctx.lineWidth = 1;
-        this.ctx.beginPath();
-        this.ctx.arc(center, center, 100, 0, Math.PI * 2);
-        this.ctx.arc(center, center, 140, 0, Math.PI * 2);
-        this.ctx.stroke();
-
-        // Línea de barrido
-        this.angle += 0.05;
-        this.ctx.save();
-        this.ctx.translate(center, center);
-        this.ctx.rotate(this.angle);
-        this.ctx.beginPath();
-        this.ctx.moveTo(0, 0);
-        this.ctx.lineTo(0, -140);
-        this.ctx.strokeStyle = '#00f0ff';
-        this.ctx.lineWidth = 2;
-        this.ctx.stroke();
-        this.ctx.restore();
-
-        requestAnimationFrame(this.animate);
-    }
-}
-customElements.define('nexus-radar-view', NexusRadar);
-
-// ==========================================
-// 4. MAIN CONTROLLER (Command handling)
-// ==========================================
-document.addEventListener('DOMContentLoaded', () => {
-    const terminal = document.getElementById('log-output');
-    const htmlRoot = document.documentElement;
-
-    // Inicializar motor de audio en la primera interacción
-    document.body.addEventListener('click', () => audioSys.init(), { once: true });
-
-    document.querySelectorAll('.btn-cyber').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            audioSys.playInteract();
-            const action = e.target.dataset.action;
+    render(data) {
+        let html = '';
+        for (const [coin, stats] of Object.entries(data)) {
+            const change = stats.usd_24h_change;
+            const changeClass = change >= 0 ? 'positive' : 'negative';
+            const sign = change >= 0 ? '+' : '';
             
-            if(action === 'init-scan') {
-                terminal.textContent = "> Escaneando sector táctico...\n";
-                // Simulación asíncrona enviando datos al Web Component
-                let val = 0;
-                const interval = setInterval(() => {
-                    val += Math.floor(Math.random() * 50);
-                    sysBus.emit('scan-update', { val });
-                    if(val > 500) {
-                        clearInterval(interval);
-                        terminal.textContent += "> Escaneo completado.";
-                    }
-                }, 100);
-            }
-            
-            if(action === 'purge-cache') {
-                terminal.textContent = "> Memoria purgada exitosamente.";
-                sysBus.emit('scan-update', { val: 0 });
-            }
+            html += `
+                <div class="data-row">
+                    <span style="text-transform: uppercase;">${coin}</span>
+                    <span>
+                        $${stats.usd.toLocaleString()} 
+                        <span class="${changeClass}">(${sign}${change.toFixed(2)}%)</span>
+                    </span>
+                </div>
+            `;
+        }
+        this.innerHTML = html;
+    }
+}
+customElements.define('nexus-finance', NexusFinance);
 
-            if(action === 'toggle-theme') {
-                const current = htmlRoot.getAttribute('data-theme');
-                const next = current === 'dark' ? 'light' : 'dark';
-                htmlRoot.setAttribute('data-theme', next);
-                terminal.textContent = `> Protocolo visual actualizado a modo: ${next}`;
-            }
-        });
-    });
-});
+// --- WIDGET DE NOTICIAS (Hacker News API - Cero Amarillismo) ---
+class NexusNews extends HTMLElement {
+    async connectedCallback() {
+        this.innerHTML = `<div style="text-align:center; color: var(--hud-alert)">Recopilando reportes...</div>`;
+        this.fetchNews();
+    }
+
+    async fetchNews() {
+        try {
+            // Hacker News es ideal: solo hechos de tecnología y negocios, sin clickbait.
+            const res = await fetch('https://hacker-news.firebaseio.com/v0/topstories.json');
+            const ids = await res.json();
+            
+            // Tomamos los primeros 4 artículos
+            const top5Ids = ids.slice(0, 4);
+            const newsPromises = top5Ids.map(id => 
+                fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`).then(r => r.json())
+            );
+            
+            const articles = await Promise.all(newsPromises);
+            this.render(articles);
+        } catch (err) {
+            this.innerHTML = `<div class="negative">INTERFERENCIA EN LA RED DE NOTICIAS</div>`;
+        }
+    }
+
+    render(articles) {
+        this.innerHTML = articles.map(article => `
+            <div class="news-item" onclick="window.open('${article.url}', '_blank')">
+                <div>> ${article.title}</div>
+                <div class="news-meta">Fuente verificada | Puntos: ${article.score}</div>
+            </div>
+        `).join('');
+    }
+}
+customElements.define('nexus-news', NexusNews);
+
+// --- WIDGET DE ESPORTS COMPETITIVO (Simulación de API Estructurada) ---
+class NexusEsports extends HTMLElement {
+    connectedCallback() {
+        // En un entorno de producción, esto se conectaría a una API de torneos
+        // Simulamos un payload JSON recibido de un servidor
+        const tournamentData = [
+            { league: "Sudamérica Championship", game: "Pokemon Unite", match: "Mizu Squad vs. Eclipse", result: "2 - 1", status: "FINALIZADO" },
+            { league: "Global Series", game: "Mobile Legends", match: "Neon Knights vs. Apex", result: "0 - 0", status: "EN JUEGO (Min 12)" },
+            { league: "Rift Qualifiers", game: "Wild Rift", match: "Dragons vs. Void", result: "--", status: "PRÓXIMAMENTE" }
+        ];
+
+        this.render(tournamentData);
+    }
+
+    render(matches) {
+        this.innerHTML = matches.map(m => `
+            <div class="data-row" style="flex-direction: column; align-items: flex-start; margin-bottom: 0.5rem; border-bottom: none;">
+                <div style="font-size: 0.7rem; color: var(--hud-alert);">> ${m.game} | ${m.league}</div>
+                <div style="display: flex; justify-content: space-between; width: 100%;">
+                    <span>${m.match}</span>
+                    <span class="${m.status === 'FINALIZADO' ? 'positive' : ''}">${m.result}</span>
+                </div>
+            </div>
+        `).join('');
+    }
+}
+customElements.define('nexus-esports', NexusEsports);
